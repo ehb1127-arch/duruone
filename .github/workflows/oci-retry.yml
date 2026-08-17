@@ -32,7 +32,7 @@ jobs:
           COUNT=$(oci compute instance list \
             --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
             --lifecycle-state RUNNING \
-            --query "length(data[?contains(\"display-name\", 'duruone')])" \
+            --query "length(data[?contains(displayName, 'duruone')])" \
             --raw-output)
           echo "이미 실행 중인 인스턴스 수: $COUNT"
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
