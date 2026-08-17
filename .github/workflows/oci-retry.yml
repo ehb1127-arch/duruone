@@ -1,0 +1,54 @@
+name: OCI ARM 인스턴스 자동 재시도
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  retry-launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: OCI CLI 설치
+        run: pip install oci-cli
+
+      - name: OCI 인증 설정
+        run: |
+          mkdir -p ~/.oci
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=/home/runner/.oci/oci_api_key.pem
+          EOF
+          printf '%s' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
+
+      - name: 이미 인스턴스가 있으면 건너뛰기
+        id: check
+        run: |
+          COUNT=$(oci compute instance list \
+            --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
+            --lifecycle-state RUNNING \
+            --query "length(data[?contains(\"display-name\", 'duruone')])" \
+            --raw-output)
+          echo "이미 실행 중인 인스턴스 수: $COUNT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: 인스턴스 생성 시도
+        if: steps.check.outputs.count == '0'
+        run: |
+          printf '%s' "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > /tmp/ssh_key.pub
+          oci compute instance launch \
+            --availability-domain "${{ secrets.OCI_AD }}" \
+            --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus": 4, "memoryInGBs": 24}' \
+            --display-name "duruone-server" \
+            --image-id "${{ secrets.OCI_IMAGE_OCID }}" \
+            --subnet-id "${{ secrets.OCI_SUBNET_OCID }}" \
+            --assign-public-ip true \
+            --ssh-authorized-keys-file /tmp/ssh_key.pub
+          echo "성공! 인스턴스가 생성됐어요 — 이 워크플로우는 이제 꺼도 됩니다."
