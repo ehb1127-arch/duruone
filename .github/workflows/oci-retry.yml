@@ -1,12 +1,12 @@
 name: OCI ARM 인스턴스 자동 재시도
 
+# 도쿄 리전 VM.Standard.A1.Flex 용량이 꽉 찬 상태라, 15분마다 자동으로
+# 인스턴스 생성을 재시도합니다. 이미 만들어졌으면 건너뜁니다.
+
 on:
   schedule:
     - cron: '*/15 * * * *'
-  workflow_dispatch: {}
-
-env:
-  SUPPRESS_LABEL_WARNING: 'True'
+  workflow_dispatch: {}   # 수동으로도 바로 실행해볼 수 있게
 
 jobs:
   retry-launch:
@@ -29,24 +29,14 @@ jobs:
           printf '%s' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
 
-      - name: 사용 가능한 AD/서브넷 확인 (디버그용)
-        run: |
-          echo "=== 실제 가용성 도메인 ==="
-          oci iam availability-domain list --compartment-id "${{ secrets.OCI_TENANCY_OCID }}"
-          echo "=== 실제 서브넷 목록 ==="
-          oci network subnet list --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
-            --query "data[].{name:\"display-name\", id:id}"
-            
       - name: 이미 인스턴스가 있으면 건너뛰기
         id: check
         run: |
-          RAW=$(oci compute instance list \
+          COUNT=$(oci compute instance list \
             --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
             --lifecycle-state RUNNING \
-            --query "length(data)" \
+            --query "length(data[?contains(\"display-name\", 'duruone')])" \
             --raw-output)
-          COUNT=$(echo "$RAW" | tr -cd '0-9')
-          COUNT="${COUNT:-0}"
           echo "이미 실행 중인 인스턴스 수: $COUNT"
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
 
@@ -58,7 +48,7 @@ jobs:
             --availability-domain "${{ secrets.OCI_AD }}" \
             --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus": 4, "memoryInGBs": 24}' \
+            --shape-config '{"ocpus": 2, "memoryInGBs": 12}' \
             --display-name "duruone-server" \
             --image-id "${{ secrets.OCI_IMAGE_OCID }}" \
             --subnet-id "${{ secrets.OCI_SUBNET_OCID }}" \
